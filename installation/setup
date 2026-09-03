@@ -1,0 +1,219 @@
+# Queue Tracker — Setup & Installation Guide
+
+A live queue-tracking prototype: a phone camera feeds video into a laptop running
+YOLOv8n + ByteTrack, which detects people, tracks queue/service zones, and serves
+live wait-time data to a customer-facing web ticket page — all exposed publicly
+via ngrok.
+
+---
+
+## What you need before starting
+
+- A Windows laptop (these instructions assume Windows/cmd)
+- A smartphone (to use as a webcam)
+- Internet connection (for installing packages and for ngrok)
+- ~15–20 minutes for first-time setup
+
+---
+
+## 1. Install Python
+
+Check if you already have it:
+```
+python --version
+```
+If that fails, check for a `py` launcher or an existing Anaconda install:
+```
+py --version
+where /r C:\ python.exe
+```
+
+If nothing is found anywhere:
+1. Download from **https://www.python.org/downloads/**
+2. Run the installer — **check "Add python.exe to PATH"** on the first screen
+3. Close and reopen your terminal, then re-check: `python --version`
+
+If you already have **Anaconda** installed (common if `where /r` found something like
+`C:\Users\<you>\anaconda3\python.exe`), you can use that Python directly by calling
+its full path instead of `python`:
+```
+"C:\Users\<you>\anaconda3\python.exe" --version
+```
+
+---
+
+## 2. Install project dependencies
+
+Using whichever Python you confirmed above:
+```
+python -m pip install ultralytics supervision opencv-python fastapi uvicorn
+```
+(or swap `python` for the full anaconda path if that's what you're using)
+
+This installs:
+- **ultralytics** — YOLOv8 object detection
+- **supervision** — ByteTrack tracking + zone/annotation helpers
+- **opencv-python** — camera capture and image drawing (`cv2`)
+- **fastapi** + **uvicorn** — the local API server that serves live queue data
+
+---
+
+## 3. Set up your phone as a webcam
+
+1. Install **DroidCam** or **Iriun Webcam** on your phone (from the Play Store / App Store)
+2. Install the matching desktop client on your laptop from the same app's website
+3. **Connect via USB** (much more reliable than Wi-Fi for a live demo — avoids lag/dropouts)
+4. Confirm the app shows "connected" and the laptop lists it as an available camera device before writing/running any code
+
+---
+
+## 4. Project files
+
+You need exactly two files, **in the same folder**:
+```
+Queue killer.py            <- main script (CV + API server)
+customer_queue_view.html   <- customer-facing ticket page
+```
+Confirm both are present:
+```
+dir
+```
+
+---
+
+## 5. Set your zone coordinates (one-time calibration)
+
+Open `Queue killer.py` and find:
+```python
+QUEUE_ZONE_POINTS = np.array([...])
+SERVICE_ZONE_POINTS = np.array([...])
+```
+These are placeholder pixel coordinates. Update them to match where your physical
+"queue" and "service" areas actually sit in the camera's field of view — you can
+eyeball this by running the script once, seeing where the zones draw, and adjusting.
+
+---
+
+## 6. Run the script
+
+From the folder containing both files:
+```
+python "Queue killer.py"
+```
+(or the full anaconda path version if `python` isn't recognized in that terminal)
+
+You should see, with no errors:
+```
+API server running at http://localhost:8000/queue-status
+Camera opened. Press 'q' in the preview window to quit.
+```
+A live video window should also pop up showing bounding boxes and zone outlines.
+
+**Common errors and fixes:**
+| Error | Fix |
+|---|---|
+| `ModuleNotFoundError: No module named 'cv2'` | Re-run step 2's pip install using the exact same Python that's failing |
+| `OSError: [WinError 10048] ... socket address` | Port 8000 is already in use — you have another copy of the script running somewhere; close it |
+| `FileNotFoundError` on the HTML file | `customer_queue_view.html` isn't in the same folder as the script |
+| `Could not open camera at index 0` | Set `CAMERA_INDEX = 1` or `2` in the script — DroidCam/Iriun sometimes isn't index 0 |
+
+---
+
+## 7. Test locally before going public
+
+In a browser, on the same laptop:
+```
+http://localhost:8000/ticket?token=1
+```
+If the ticket page loads here, your code is correct and any remaining issue is
+purely networking (ngrok), not your script.
+
+---
+
+## 8. Install ngrok (to make it public)
+
+1. Download from **https://ngrok.com/download** (Windows)
+2. Extract the zip — you'll get `ngrok.exe`. Put it in a memorable folder (e.g. same folder as your project)
+3. Sign up free at ngrok.com, grab your authtoken from the dashboard
+4. One-time setup:
+   ```
+   cd <folder with ngrok.exe>
+   ngrok config add-authtoken YOUR_TOKEN
+   ```
+
+---
+
+## 9. Expose your server publicly
+
+From the folder containing `ngrok.exe` (or anywhere, if it's on PATH):
+```
+ngrok http 8000
+```
+Copy the forwarding URL it prints, e.g.:
+```
+Forwarding   https://your-subdomain.ngrok-free.dev -> http://localhost:8000
+```
+
+**Important:** free ngrok URLs change every time you restart the tunnel — don't
+restart it mid-demo, or you'll need to update the HTML file's `API_BASE` (see below).
+
+---
+
+## 10. Update the HTML file to match your ngrok URL
+
+Open `customer_queue_view.html`, find:
+```js
+const API_BASE = "https://your-subdomain.ngrok-free.dev";
+```
+Make sure it matches whatever ngrok just gave you.
+
+---
+
+## 11. Test the public link
+
+In a browser:
+```
+https://your-subdomain.ngrok-free.dev/ticket?token=1
+```
+(You may hit an ngrok interstitial warning page first on the free tier — click
+**Visit Site** to continue through.)
+
+You should see the dark ticket UI, updating every 3 seconds.
+
+---
+
+## 12. Give customers a way to get their own ticket number
+
+Instead of manually assigning numbers, use the built-in auto-ticket route:
+```
+https://your-subdomain.ngrok-free.dev/new-ticket
+```
+Every visit to this link hands out the next sequential number and redirects
+straight to that person's `/ticket?token=N` page.
+
+**Turn this into a QR code:**
+1. Go to a free QR generator (e.g. qrcode-monkey.com)
+2. Paste in your `/new-ticket` link
+3. Download the QR image, print it or display it at the entrance with a sign like
+   **"Scan for your queue number"**
+
+---
+
+## 13. Full run checklist (every time you demo)
+
+1. Start DroidCam/Iriun on phone + laptop, confirm connected
+2. Run `python "Queue killer.py"` — wait for both startup messages
+3. Run `ngrok http 8000` in a separate terminal — confirm forwarding URL
+4. If the URL changed, update `API_BASE` in the HTML and restart the script
+5. Test `/new-ticket` yourself once
+6. Display the QR code / link at the entrance
+7. Press `q` in the video window to shut down when done
+
+---
+
+## Known limitations (fine for a prototype, flag if scaling up)
+
+- Ticket numbers reset to 0 if the script restarts — no persistence
+- If ByteTrack ever reassigns a new ID to the same person (e.g. after being
+  occluded too long), they'll be double-counted as a new queue entry
+- Free ngrok URLs are not stable across restarts unless you pay for a reserved domain
