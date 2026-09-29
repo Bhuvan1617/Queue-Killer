@@ -3,7 +3,18 @@
 A single-camera computer vision system that tracks how many people are waiting, estimates live wait time, and serves a "Now Serving" token number to customers over a web link — no app install, no per-customer check-in.
 
 Built for walk-in-heavy, low-infrastructure environments like clinics, salons, and canteens where people currently wait 30–40 minutes with zero visibility into their position in line.
+## Quick Start
 
+```
+git clone https://github.com/Bhuvan1617/Queue-Killer.git
+cd Queue-Killer
+pip install -r requirements.txt
+python queue_tracker.py
+```
+
+Then open `http://localhost:8000/ticket` in your browser.
+
+> Needs a webcam (or DroidCam/Iriun for a phone camera).
 ---
 
 ## Problem
