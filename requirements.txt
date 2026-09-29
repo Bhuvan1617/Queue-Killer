@@ -1,0 +1,6 @@
+ultralytics
+supervision
+opencv-python
+fastapi
+uvicorn
+numpy
