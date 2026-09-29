@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Your Queue Ticket</title>
+<style>
+  :root {
+    --bg: #0B1220;
+    --panel: #121A2B;
+    --panel-edge: #1E2A44;
+    --amber: #FFB020;
+    --green: #34D399;
+    --text: #E7ECF5;
+    --muted: #8592AD;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .ticket {
+    width: 100%;
+    max-width: 380px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 18px;
+    padding: 32px 28px;
+    text-align: center;
+  }
+
+  .now-serving-label {
+    color: var(--muted);
+    font-size: 13px;
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+  }
+
+  .now-serving-number {
+    font-family: "SF Mono", "Roboto Mono", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-size: 22px;
+    font-weight: 600;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--panel-edge);
+    margin: 24px 0;
+  }
+
+  .your-ticket-label {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+
+  .your-number {
+    font-family: "SF Mono", "Roboto Mono", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 88px;
+    font-weight: 700;
+    color: var(--amber);
+    line-height: 1;
+    margin-bottom: 18px;
+  }
+
+  .position-line {
+    font-size: 17px;
+    margin-bottom: 4px;
+  }
+
+  .position-line strong {
+    color: var(--amber);
+  }
+
+  .wait-line {
+    color: var(--muted);
+    font-size: 15px;
+    margin-bottom: 6px;
+  }
+
+  .wait-line strong {
+    color: var(--text);
+  }
+
+  .banner {
+    margin-top: 20px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: rgba(52, 211, 153, 0.12);
+    border: 1px solid rgba(52, 211, 153, 0.35);
+    color: var(--green);
+    font-size: 14px;
+    display: none;
+  }
+
+  .banner.show {
+    display: block;
+  }
+
+  .served-banner {
+    margin-top: 20px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: rgba(255, 176, 32, 0.12);
+    border: 1px solid rgba(255, 176, 32, 0.4);
+    color: var(--amber);
+    font-size: 16px;
+    font-weight: 600;
+    display: none;
+  }
+
+  .served-banner.show {
+    display: block;
+  }
+
+  .status-row {
+    margin-top: 20px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  .error-text {
+    color: #F87171;
+    font-size: 13px;
+    margin-top: 14px;
+    display: none;
+  }
+
+  .error-text.show {
+    display: block;
+  }
+</style>
+</head>
+<body>
+
+<div class="ticket">
+  <div class="now-serving-label">Now serving</div>
+  <div class="now-serving-number" id="nowServing">—</div>
+
+  <div class="divider"></div>
+
+  <div class="your-ticket-label">Your ticket</div>
+  <div class="your-number" id="yourToken">—</div>
+
+  <div class="position-line" id="positionLine">Waiting for queue data…</div>
+  <div class="wait-line" id="waitLine"></div>
+
+  <div class="served-banner" id="servedBanner">You're up! Please head to the counter.</div>
+  <div class="banner" id="walkoutBanner">Queue moving faster — someone stepped out.</div>
+
+  <div class="status-row"><span class="dot"></span>Live · updates every 3s</div>
+  <div class="error-text" id="errorText">Can't reach the queue right now. Retrying…</div>
+</div>
+
+<script>
+  // ---- CONFIG ----
+  const API_BASE = "https://sermon-sports-obstruct.ngrok-free.dev";
+  const POLL_INTERVAL_MS = 3000;
+
+  // ---- Get token from URL, e.g. ?token=7 ----
+  const params = new URLSearchParams(window.location.search);
+  const token = parseInt(params.get("token"), 10);
+
+  const yourTokenEl = document.getElementById("yourToken");
+  const nowServingEl = document.getElementById("nowServing");
+  const positionLineEl = document.getElementById("positionLine");
+  const waitLineEl = document.getElementById("waitLine");
+  const walkoutBannerEl = document.getElementById("walkoutBanner");
+  const servedBannerEl = document.getElementById("servedBanner");
+  const errorTextEl = document.getElementById("errorText");
+
+  if (!isNaN(token)) {
+    yourTokenEl.textContent = "#" + token;
+  } else {
+    yourTokenEl.textContent = "?";
+    positionLineEl.textContent = "No ticket number found in this link.";
+  }
+
+  let previousWalkouts = null;
+  let walkoutBannerTimer = null;
+
+  async function fetchQueueStatus() {
+    try {
+      const response = await fetch(API_BASE + "/queue-status", {
+        headers: {
+          "ngrok-skip-browser-warning": "true"
+        }
+      });
+
+      if (!response.ok) throw new Error("Bad response");
+
+      const data = await response.json();
+      errorTextEl.classList.remove("show");
+      updateUI(data);
+    } catch (err) {
+      errorTextEl.classList.add("show");
+    }
+  }
+
+  function updateUI(data) {
+    const nowServing = data.now_serving ?? 0;
+    const estimatedWaitMinutes = data.estimated_wait_minutes ?? 0;
+    const recentWalkouts = data.recent_walkouts ?? 0;
+
+    nowServingEl.textContent = "#" + nowServing;
+
+    if (!isNaN(token)) {
+      const position = token - nowServing;
+
+      if (position <= 0) {
+        positionLineEl.innerHTML = "You're being served now!";
+        waitLineEl.textContent = "";
+        servedBannerEl.classList.add("show");
+      } else {
+        servedBannerEl.classList.remove("show");
+        positionLineEl.innerHTML = `You are <strong>#${position}</strong> in line`;
+        const perPersonWait = position * (estimatedWaitMinutes / Math.max(1, position === 0 ? 1 : position));
+        waitLineEl.innerHTML = `Real wait: <strong>~${Math.max(0, Math.round(estimatedWaitMinutes))} min</strong>`;
+      }
+    }
+
+    // Flash a banner when a new walkout is detected
+    if (previousWalkouts !== null && recentWalkouts > previousWalkouts) {
+      walkoutBannerEl.classList.add("show");
+      clearTimeout(walkoutBannerTimer);
+      walkoutBannerTimer = setTimeout(() => {
+        walkoutBannerEl.classList.remove("show");
+      }, 6000);
+    }
+    previousWalkouts = recentWalkouts;
+  }
+
+  fetchQueueStatus();
+  setInterval(fetchQueueStatus, POLL_INTERVAL_MS);
+</script>
+
+</body>
+</html>
