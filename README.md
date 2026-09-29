@@ -85,7 +85,7 @@ The rolling window (not a full-day average) means the estimate adapts within a h
 ### Requirements
 
 ```bash
-pip install ultralytics supervision opencv-python fastapi uvicorn numpy
+pip install -r requirements.txt
 ```
 
 ### Run
